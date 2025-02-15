@@ -1,6 +1,5 @@
 import socket
 import threading
-import random
 
 # Fake directory structure
 FAKE_DIRS = [
@@ -10,7 +9,7 @@ FAKE_DIRS = [
     "-rw-r--r--   1 user ftp 5678 Feb 15 00:00 flag.txt"
 ]
 
-class FakeFTPServer:
+class ActiveModeFTPServer:
     def __init__(self, host="0.0.0.0", port=21):
         self.host = host
         self.port = port
@@ -18,23 +17,21 @@ class FakeFTPServer:
         self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.server_socket.bind((self.host, self.port))
         self.server_socket.listen(5)
-        print(f"[FTP ] Running on {self.host}:{self.port}")
-    
+        print(f"[FTP] Running on {self.host}:{self.port}")
+
     def handle_client(self, client_socket, client_addr):
         print(f"[NEW CONNECTION] {client_addr} connected")
-        client_socket.send(b"220 Welcome to  FTP Server\r\n")
-        
+        client_socket.send(b"220 Welcome to Fake FTP Server\r\n")
+
         authenticated = False
-        passive_mode = False
-        passive_socket = None
         data_conn = None
-        
+
         while True:
             try:
                 command = client_socket.recv(1024).decode().strip()
                 if not command:
                     break
-                
+
                 print(f"[{client_addr}] {command}")
 
                 if command.startswith("USER"):
@@ -62,16 +59,7 @@ class FakeFTPServer:
                 elif command.startswith("RMD"):
                     client_socket.send(b"250 Directory removed\r\n")
 
-                elif command.startswith("PASV"):  # Passive Mode
-                    passive_mode = True
-                    pasv_port = random.randint(20000, 30000)
-                    passive_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                    passive_socket.bind((self.host, pasv_port))
-                    passive_socket.listen(1)
-                    p1, p2 = pasv_port // 256, pasv_port % 256
-                    client_socket.send(f"227 Entering Passive Mode (192,168,0,179,{p1},{p2})\r\n".encode())
-
-                elif command.startswith("PORT"):  # Active Mode
+                elif command.startswith("PORT"):  # Active Mode Handling
                     parts = command.split(" ")[1].split(",")
                     data_host = ".".join(parts[:4])
                     data_port = int(parts[4]) * 256 + int(parts[5])
@@ -80,19 +68,15 @@ class FakeFTPServer:
                     client_socket.send(b"200 PORT command successful\r\n")
 
                 elif command in ["LIST", "LS", "DIR"]:
-                    if passive_mode and passive_socket:
-                        client_socket.send(b"150 Here comes the directory listing\r\n")
-                        data_conn, _ = passive_socket.accept()
-                    elif data_conn:
-                        client_socket.send(b"150 Here comes the directory listing\r\n")
-                    else:
-                        client_socket.send(b"425 Use PASV or PORT first\r\n")
+                    if not data_conn:
+                        client_socket.send(b"425 Use PORT first\r\n")
                         continue
 
+                    client_socket.send(b"150 Opening data connection for directory listing\r\n")
                     response = "\r\n".join(FAKE_DIRS) + "\r\n"
                     data_conn.send(response.encode())
                     data_conn.close()
-                    client_socket.send(b"226 Directory send OK\r\n")
+                    client_socket.send(b"226 Directory listing sent successfully\r\n")
 
                 elif command == "QUIT":
                     client_socket.send(b"221 Goodbye!\r\n")
@@ -113,7 +97,6 @@ class FakeFTPServer:
             client_thread = threading.Thread(target=self.handle_client, args=(client_socket, client_addr))
             client_thread.start()
 
-
 if __name__ == "__main__":
-    ftp_server = FakeFTPServer()
+    ftp_server = ActiveModeFTPServer()
     ftp_server.start()
